@@ -1,0 +1,2457 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>School Visits Map</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: Arial, sans-serif; 
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #map { 
+            flex: 1; 
+            width: 100%; 
+            height: 100%;
+            position: relative;
+        }
+        .controls { 
+            padding: 10px; 
+            background: #f4f4f4; 
+        }
+        select { 
+            padding: 5px; 
+            margin-right: 10px; 
+            width: 200px; 
+        }
+        h2 { 
+            margin-top: 0; 
+        }
+        .file-section { 
+            margin-bottom: 10px; 
+            padding-bottom: 10px; 
+            border-bottom: 1px solid #ddd; 
+        }
+        #loadStatus { 
+            margin-left: 10px; 
+            font-weight: bold; 
+        }
+        .button {
+            padding: 5px 10px;
+            margin: 0 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #sameDayOfficials {
+            position: absolute;
+            top: 160px;
+            left: 10px;
+            z-index: 1000;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: none;
+            max-width: 300px;
+            width: auto;
+            max-height: 70vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        #sameDayOfficials h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 14px;
+        }
+        .school-group {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #f9f9f9;
+            border-left: 4px solid #4CAF50;
+            border-radius: 3px;
+        }
+        .school-name {
+            font-weight: bold;
+            color: #2c5530;
+            margin-bottom: 5px;
+            font-size: 13px;
+        }
+        .officials-list {
+            margin-left: 5px;
+            color: #555;
+        }
+        .official-item {
+            margin: 3px 0;
+            padding: 2px 0;
+            font-size: 12px;
+            display: block;
+        }
+        .multiple-officials {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+        }
+        .multiple-officials .school-name {
+            color: #856404;
+        }
+        .file-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        #fileInput {
+            display: none;
+        }
+        .leaflet-popup-content {
+            margin: 10px;
+        }
+        /* Status message styles */
+        .loading-status {
+            color: #337ab7;
+            font-weight: bold;
+        }
+        .success-status {
+            color: #5cb85c;
+            font-weight: bold;
+        }
+        .error-message {
+            color: #d9534f;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h2>Overberg Education District: Curriculum School Visits Map</h2>
+        
+        <div class="file-section">
+            <input type="file" id="fileInput" accept=".csv" />
+            <span id="loadStatus"></span>
+            <div id="fileInfo" class="file-info"></div>
+        </div>
+
+        <label for="dateFilter">Filter by Date:</label>
+        <select id="dateFilter">
+            <option value="all">All Dates</option>
+        </select>
+
+        <label for="schoolFilter">Filter by School:</label>
+        <select id="schoolFilter">
+            <option value="all">All Schools</option>
+        </select>
+
+        <label for="officialFilter">Filter by Official:</label>
+        <select id="officialFilter">
+            <option value="all">All Officials</option>
+        </select>
+    </div>
+    <div id="map"></div>
+    <div id="sameDayOfficials">
+        <h3>Officials visiting same school:</h3>
+        <div id="sameDayList"></div>
+    </div>
+
+    <script>
+const embeddedSchoolData = [
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "BONTEBOK PS",
+    "LONG": "20.446294",
+    "LAT": "-34.035589",
+    "OFFICIALS": "Adonis, H"
+  },
+  {
+    "DATE": "Wednesday, 23 July 2025",
+    "SCHOOL/VENUE": "CTLI",
+    "LONG": "18.679156",
+    "LAT": "-33.939495",
+    "OFFICIALS": "Adonis, H"
+  },
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "BREDASDORP HS",
+    "LONG": "20.036638",
+    "LAT": "-34.539277",
+    "OFFICIALS": "Auret, J"
+  },
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "ALBERT MYBURGH SS",
+    "LONG": "20.050664",
+    "LAT": "-34.530107",
+    "OFFICIALS": "Gerber, J"
+  },
+  {
+    "DATE": "Wednesday, 23 July 2025",
+    "SCHOOL/VENUE": "GROENBERG SS",
+    "LONG": "18.999074",
+    "LAT": "-34.156964",
+    "OFFICIALS": "Gerber, J"
+  },
+  {
+    "DATE": "Thursday, 24 July 2025",
+    "SCHOOL/VENUE": "FISHERHAVEN ACADEMY",
+    "LONG": "19.122308",
+    "LAT": "-34.360550",
+    "OFFICIALS": "Gerber, J"
+  },
+  {
+    "DATE": "Friday, 25 July 2025",
+    "SCHOOL/VENUE": "BONTEBOK PS",
+    "LONG": "20.446294",
+    "LAT": "-34.035589",
+    "OFFICIALS": "Gerber, J"
+  },
+  {
+    "DATE": "Monday, 28 July 2025",
+    "SCHOOL/VENUE": "GANSBAAI ACADEMIA",
+    "LONG": "19.352090",
+    "LAT": "-34.595003",
+    "OFFICIALS": "Gerber, J"
+  },
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 23 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 24 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 25 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 26 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 27 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 28 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 29 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 30 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 31 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 01 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 02 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 03 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 04 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 05 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 06 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 07 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 08 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 09 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 10 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 11 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 12 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 13 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 14 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 15 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 16 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 17 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 18 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 19 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 20 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 21 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 22 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 23 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 24 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 25 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 26 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 27 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 28 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 29 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 30 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 31 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 01 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 02 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 03 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 04 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 05 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 06 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 07 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 08 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 09 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 10 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 11 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 12 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 13 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 14 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 15 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 16 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 17 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 18 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 19 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 20 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 21 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 22 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 23 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 24 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 25 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 26 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 27 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 28 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 29 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 30 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 01 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 02 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 03 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 04 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 05 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 06 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 07 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 08 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 09 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 10 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 11 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 12 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 23 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 24 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 25 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 26 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 27 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 28 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 29 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 30 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 31 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 01 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 02 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 03 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 04 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 05 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 06 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 07 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 08 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 09 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 10 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 11 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 12 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 13 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 14 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 15 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 16 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 17 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 18 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 19 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 20 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 21 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 22 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 23 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 24 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 25 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 26 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 27 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 28 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 29 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 30 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 31 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 01 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 02 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 03 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 04 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 05 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 06 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 07 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 08 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 09 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 10 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 11 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 12 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 13 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 14 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 15 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 16 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 17 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 18 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 19 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 20 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 21 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 22 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 23 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 24 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 25 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 26 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 27 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 28 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 29 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 30 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 01 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 02 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 03 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 04 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 05 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 06 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 07 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 08 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 09 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 10 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 11 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 12 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 23 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 24 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 25 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 26 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 27 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 28 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 29 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 30 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 31 July 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 01 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 02 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 03 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 04 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 05 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 06 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 07 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 08 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 09 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 10 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 11 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 12 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 13 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 14 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 15 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 16 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 17 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 18 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 19 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 20 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 21 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 22 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 23 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 24 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 25 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 26 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 27 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 28 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 29 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 30 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 31 August 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 01 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 02 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 03 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 04 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 05 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 06 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 07 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 08 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 09 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 10 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 11 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 12 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 13 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 14 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 15 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 16 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 17 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 18 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 19 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 20 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 21 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 22 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 23 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 24 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 25 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 26 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 27 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 28 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 29 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 30 September 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 01 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 02 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 03 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 04 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 05 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Monday, 06 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 07 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Wednesday, 08 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Thursday, 09 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Friday, 10 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Saturday, 11 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Sunday, 12 October 2025",
+    "SCHOOL/VENUE": "0",
+    "LONG": "0.000000",
+    "LAT": "0.000000",
+    "OFFICIALS": NaN
+  },
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "OVERBERG HS",
+    "LONG": "19.425270",
+    "LAT": "-34.225916",
+    "OFFICIALS": "Ockhuis, J"
+  },
+  {
+    "DATE": "Tuesday, 22 July 2025",
+    "SCHOOL/VENUE": "ALBERT MYBURGH SS",
+    "LONG": "20.050664",
+    "LAT": "-34.530107",
+    "OFFICIALS": "Pieters, L"
+  },
+  {
+    "DATE": "Wednesday, 23 July 2025",
+    "SCHOOL/VENUE": "BREDASDORP HS",
+    "LONG": "20.036638",
+    "LAT": "-34.539277",
+    "OFFICIALS": "Pieters, L"
+  },
+  {
+    "DATE": "Monday, 28 July 2025",
+    "SCHOOL/VENUE": "GANSBAAI ACADEMIA",
+    "LONG": "19.352090",
+    "LAT": "-34.595003",
+    "OFFICIALS": "Pieters, L"
+  }
+];
+</script>
+<script>
+        let schoolData = [];
+        let markers = [];
+        let currentFileContent = null;
+        let lastUploadedFile = null;
+
+        // Initialize the map centered on South Africa
+        const map = L.map('map').setView([-33.9249, 18.4241], 8);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Function to clear existing markers
+        function clearMarkers() {
+            markers.forEach(({ marker }) => {
+                map.removeLayer(marker);
+            });
+            markers = [];
+        }
+
+        // Function to check if a value is empty, zero, or invalid
+        function isValidValue(value) {
+            if (!value) return false;
+            const str = value.toString().trim();
+            if (str === '' || str === '0' || str === '0,0' || str === '0.0' || str === '#VALUE!') return false;
+            return true;
+        }
+
+        // Function to parse date strings into Date objects for sorting
+        function parseDate(dateStr) {
+            // Try to parse "Tuesday, 22 July 2025"
+            const longFormat = moment(dateStr, "dddd, D MMMM YYYY", true);
+            if (longFormat.isValid()) return longFormat.toDate();
+            
+            // Fall back to other formats
+            const formats = [
+                'YYYY-MM-DD',
+                'DD/MM/YYYY',
+                'MM/DD/YYYY'
+            ];
+            
+            for (const format of formats) {
+                const date = moment(dateStr, format, true);
+                if (date.isValid()) return date.toDate();
+            }
+            return new Date(0);
+        }
+
+        // Function to find same-day officials for a specific date
+        function findSameDayOfficials(selectedDate) {
+            const sameDayContainer = document.getElementById('sameDayOfficials');
+            const sameDayList = document.getElementById('sameDayList');
+            
+            if (selectedDate === 'all') {
+                sameDayContainer.style.display = 'none';
+                return;
+            }
+
+            const schoolGroups = {};
+            
+            schoolData.forEach(record => {
+                const date = record.DATE || record.date || record.Date || '';
+                const schoolName = record['SCHOOL/VENUE'] || record.school || record.School || '';
+                const official = record.OFFICIALS || record.official || record.Official || '';
+                
+                if (date === selectedDate && isValidValue(schoolName) && isValidValue(official)) {
+                    if (!schoolGroups[schoolName]) {
+                        schoolGroups[schoolName] = new Set();
+                    }
+                    schoolGroups[schoolName].add(official);
+                }
+            });
+
+            sameDayList.innerHTML = '';
+
+            const schoolsWithMultipleOfficials = Object.keys(schoolGroups).filter(school => 
+                schoolGroups[school].size > 1
+            );
+
+            if (schoolsWithMultipleOfficials.length === 0) {
+                const allSchoolsForDate = Object.keys(schoolGroups);
+                if (allSchoolsForDate.length === 0) {
+                    sameDayList.innerHTML = '<p style="color: #666; font-style: italic;">No data for this date</p>';
+                } else {
+                    sameDayList.innerHTML = '<p style="color: #666; font-style: italic;">No multiple officials</p>';
+                }
+                sameDayContainer.style.display = 'block';
+                return;
+            }
+
+            schoolsWithMultipleOfficials.forEach(schoolName => {
+                const officials = Array.from(schoolGroups[schoolName]);
+                
+                const schoolDiv = document.createElement('div');
+                schoolDiv.className = 'school-group multiple-officials';
+                
+                const schoolNameDiv = document.createElement('div');
+                schoolNameDiv.className = 'school-name';
+                schoolNameDiv.textContent = schoolName;
+                
+                const officialsDiv = document.createElement('div');
+                officialsDiv.className = 'officials-list';
+                
+                officials.forEach(official => {
+                    const officialDiv = document.createElement('div');
+                    officialDiv.className = 'official-item';
+                    officialDiv.textContent = `• ${official}`;
+                    officialsDiv.appendChild(officialDiv);
+                });
+                
+                schoolDiv.appendChild(schoolNameDiv);
+                schoolDiv.appendChild(officialsDiv);
+                sameDayList.appendChild(schoolDiv);
+            });
+
+            sameDayContainer.style.display = 'block';
+        }
+
+        // Function to create markers from data
+        function createMarkers() {
+            clearMarkers();
+            let skippedCount = 0;
+            
+            schoolData.forEach(school => {
+                const schoolName = school['SCHOOL/VENUE'] || school.school || school.School || '';
+                const date = school.DATE || school.date || school.Date || '';
+                const official = school.OFFICIALS || school.official || school.Official || '';
+                const latRaw = school.LAT || school.lat || school.latitude || school.Latitude || '';
+                const lngRaw = school.LONG || school.long || school.lng || school.longitude || school.Longitude || '';
+
+                if (!isValidValue(schoolName) || !isValidValue(date) || 
+                    !isValidValue(latRaw) || !isValidValue(lngRaw)) {
+                    skippedCount++;
+                    return;
+                }
+
+                const latStr = latRaw.toString().replace(',', '.');
+                const lngStr = lngRaw.toString().replace(',', '.');
+                
+                const lat = parseFloat(latStr);
+                const lng = parseFloat(lngStr);
+                
+                if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+                    skippedCount++;
+                    return;
+                }
+                
+                const marker = L.marker([lat, lng])
+                    .bindPopup(`
+                        <strong>${schoolName}</strong><br>
+                        <b>Date:</b> ${date}<br>
+                        <b>Official:</b> ${isValidValue(official) ? official : 'No official'}
+                    `)
+                    .on('mouseover', function() {
+                        this.openPopup();
+                    })
+                    .on('mouseout', function() {
+                        this.closePopup();
+                    });
+                    
+                markers.push({ marker, data: school });
+                marker.addTo(map);
+            });
+
+            if (skippedCount > 0) {
+                console.log(`Skipped ${skippedCount} rows due to missing/invalid data`);
+            }
+        }
+
+        // Function to load and parse CSV file
+        function loadCSV(file) {
+            if (!file || !file.name.toLowerCase().endsWith('.csv')) {
+                showError('Please select a valid CSV file');
+                return;
+            }
+
+            document.getElementById('fileInfo').textContent = `File: ${file.name}`;
+            document.getElementById('loadStatus').textContent = 'Loading...';
+            document.getElementById('loadStatus').className = 'loading-status';
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    currentFileContent = e.target.result;
+                    lastUploadedFile = file;
+                    
+                    // Verify content isn't empty
+                    if (!currentFileContent || currentFileContent.trim() === '') {
+                        showError('File is empty');
+                        return;
+                    }
+                    
+                    Papa.parse(currentFileContent, {
+                        header: true,
+                        complete: function(results) {
+                            if (!results.data || results.data.length === 0) {
+                                showError('No valid data found in CSV');
+                                return;
+                            }
+                            
+                            schoolData = results.data;
+                            document.getElementById('loadStatus').textContent = 'Loaded successfully';
+                            document.getElementById('loadStatus').className = 'success-status';
+                            
+                            updateFilters();
+                            createMarkers();
+                            saveAppState(); // Save the state after loading
+                        },
+                        error: function(error) {
+                            showError('Error parsing CSV');
+                            console.error('Error parsing CSV:', error);
+                        }
+                    });
+                } catch (err) {
+                    showError('Error processing file');
+                    console.error('Processing error:', err);
+                }
+            };
+            
+            reader.onerror = function() {
+                showError('Cannot read file - may be in use by another program');
+            };
+            
+            try {
+                reader.readAsText(file);
+            } catch (err) {
+                showError('Error accessing file');
+                console.error('File access error:', err);
+            }
+        }
+
+        // Helper function for error display
+        function showError(message) {
+            const statusElement = document.getElementById('loadStatus');
+            statusElement.textContent = message;
+            statusElement.className = 'error-message';
+        }
+
+        // Function to update filter dropdowns
+        function updateFilters() {
+            const dateFilter = document.getElementById('dateFilter');
+            const schoolFilter = document.getElementById('schoolFilter');
+            const officialFilter = document.getElementById('officialFilter');
+            
+            while (dateFilter.options.length > 1) dateFilter.remove(1);
+            while (schoolFilter.options.length > 1) schoolFilter.remove(1);
+            while (officialFilter.options.length > 1) officialFilter.remove(1);
+            
+            const dates = new Set();
+            const schools = new Set();
+            const officials = new Set();
+            
+            schoolData.forEach(school => {
+                const date = school.DATE || school.date || school.Date || '';
+                const schoolName = school['SCHOOL/VENUE'] || school.school || school.School || '';
+                const official = school.OFFICIALS || school.official || school.Official || '';
+                
+                if (isValidValue(date)) dates.add(date);
+                if (isValidValue(schoolName)) schools.add(schoolName);
+                if (isValidValue(official)) officials.add(official);
+            });
+            
+            // Sort dates chronologically
+            const sortedDates = Array.from(dates).sort((a, b) => {
+                return parseDate(a) - parseDate(b);
+            });
+            
+            // Add sorted date options
+            sortedDates.forEach(date => {
+                dateFilter.add(new Option(date, date));
+            });
+            
+            // Add school options (alphabetical)
+            Array.from(schools).sort().forEach(school => {
+                schoolFilter.add(new Option(school, school));
+            });
+            
+            // Add official options (alphabetical)
+            Array.from(officials).sort().forEach(official => {
+                officialFilter.add(new Option(official, official));
+            });
+        }
+
+        // Save state to local storage
+        function saveAppState() {
+            const state = {
+                fileContent: currentFileContent,
+                fileName: lastUploadedFile ? lastUploadedFile.name : null,
+                dateFilter: document.getElementById('dateFilter').value,
+                schoolFilter: document.getElementById('schoolFilter').value,
+                officialFilter: document.getElementById('officialFilter').value,
+                mapView: {
+                    center: map.getCenter(),
+                    zoom: map.getZoom()
+                }
+            };
+            localStorage.setItem('schoolVisitsMapState', JSON.stringify(state));
+        }
+
+        // Load state from local storage
+        function loadAppState() {
+            const savedState = localStorage.getItem('schoolVisitsMapState');
+            if (savedState) {
+                const state = JSON.parse(savedState);
+                
+                // Restore file content if available
+                if (state.fileContent) {
+                    currentFileContent = state.fileContent;
+                    Papa.parse(currentFileContent, {
+                        header: true,
+                        complete: function(results) {
+                            schoolData = results.data;
+                            updateFilters();
+                            createMarkers();
+                            
+                            // Restore filters after data loads
+                            if (state.dateFilter) document.getElementById('dateFilter').value = state.dateFilter;
+                            if (state.schoolFilter) document.getElementById('schoolFilter').value = state.schoolFilter;
+                            if (state.officialFilter) document.getElementById('officialFilter').value = state.officialFilter;
+                            
+                            // Trigger filter change events
+                            document.getElementById('dateFilter').dispatchEvent(new Event('change'));
+                        }
+                    });
+                }
+                
+                // Update file info display
+                if (state.fileName) {
+                    document.getElementById('fileInfo').textContent = `File: ${state.fileName}`;
+                }
+                
+                // Restore map view
+                if (state.mapView) {
+                    map.setView(state.mapView.center, state.mapView.zoom);
+                }
+            }
+        }
+
+        // Clear all stored data
+        function clearStorage() {
+            localStorage.removeItem('schoolVisitsMapState');
+            currentFileContent = null;
+            lastUploadedFile = null;
+            schoolData = [];
+            clearMarkers();
+            document.getElementById('fileInfo').textContent = '';
+            document.getElementById('loadStatus').textContent = '';
+            document.getElementById('dateFilter').value = 'all';
+            document.getElementById('schoolFilter').value = 'all';
+            document.getElementById('officialFilter').value = 'all';
+            document.getElementById('sameDayOfficials').style.display = 'none';
+            map.setView([-33.9249, 18.4241], 8); // Reset to default view
+        }
+
+        // Event listeners
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if (e.target.files && e.target.files.length > 0) {
+                // Reset status
+                document.getElementById('loadStatus').textContent = '';
+                document.getElementById('loadStatus').className = '';
+                
+                // Store the file reference
+                lastUploadedFile = e.target.files[0];
+                
+                // Verify file size (under 5MB)
+                if (lastUploadedFile.size > 5 * 1024 * 1024) {
+                    showError('File too large (max 5MB)');
+                    return;
+                }
+                
+                loadCSV(lastUploadedFile);
+            }
+        });
+
+        document.getElementById('dateFilter').addEventListener('change', function() {
+            const selectedDate = this.value;
+            findSameDayOfficials(selectedDate);
+            
+            if (selectedDate === 'all') {
+                markers.forEach(({ marker }) => {
+                    map.addLayer(marker);
+                });
+            } else {
+                markers.forEach(({ marker, data }) => {
+                    const date = data.DATE || data.date || data.Date || '';
+                    if (date === selectedDate) {
+                        map.addLayer(marker);
+                    } else {
+                        map.removeLayer(marker);
+                    }
+                });
+            }
+            saveAppState();
+        });
+
+        document.getElementById('schoolFilter').addEventListener('change', function() {
+            const selectedSchool = this.value;
+            
+            if (selectedSchool === 'all') {
+                markers.forEach(({ marker }) => {
+                    map.addLayer(marker);
+                });
+            } else {
+                markers.forEach(({ marker, data }) => {
+                    const schoolName = data['SCHOOL/VENUE'] || data.school || data.School || '';
+                    if (schoolName === selectedSchool) {
+                        map.addLayer(marker);
+                    } else {
+                        map.removeLayer(marker);
+                    }
+                });
+            }
+            saveAppState();
+        });
+
+        document.getElementById('officialFilter').addEventListener('change', function() {
+            const selectedOfficial = this.value;
+            
+            if (selectedOfficial === 'all') {
+                markers.forEach(({ marker }) => {
+                    map.addLayer(marker);
+                });
+            } else {
+                markers.forEach(({ marker, data }) => {
+                    const official = data.OFFICIALS || data.official || data.Official || '';
+                    if (official === selectedOfficial) {
+                        map.addLayer(marker);
+                    } else {
+                        map.removeLayer(marker);
+                    }
+                });
+            }
+            saveAppState();
+        });
+
+        // Save map view when it changes
+        map.on('moveend', saveAppState);
+
+        
+// Load data from embeddedSchoolData and initialize
+window.addEventListener('DOMContentLoaded', function() {
+    schoolData = embeddedSchoolData;
+    updateFilters();
+    createMarkers();
+});
+
+    </script>
+    <!-- Add Moment.js for date parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+</body>
+</html>
